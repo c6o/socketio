@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"bytes"
-	"crypto/tls"
 	"errors"
 	"github.com/Baiguoshuai1/shadiaosocketio/protocol"
 	"github.com/Baiguoshuai1/shadiaosocketio/utils"
@@ -268,19 +267,13 @@ type Transport struct {
 	BufferSize    int
 	BinaryMessage bool
 
-	UnsecureTLS   bool
-	TLSConfig     *tls.Config
+	Dialer *websocket.Dialer
 
 	RequestHeader http.Header
 }
 
 func (wst *Transport) Connect(url string) (conn *Connection, err error) {
-	tlsCfg := wst.TLSConfig
-	if tlsCfg == nil {
-		tlsCfg = &tls.Config{InsecureSkipVerify: wst.UnsecureTLS}
-	}
-	dialer := websocket.Dialer{TLSClientConfig: tlsCfg}
-	socket, _, err := dialer.Dial(url, wst.RequestHeader)
+	socket, _, err := wst.Dialer.Dial(url, wst.RequestHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +321,5 @@ func GetDefaultWebsocketTransport() *Transport {
 		SendTimeout:    WsDefaultSendTimeout,
 		BufferSize:     WsDefaultBufferSize,
 		BinaryMessage:  false,
-		UnsecureTLS:    false,
-		TLSConfig:      nil,
 	}
 }
