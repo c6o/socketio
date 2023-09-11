@@ -321,5 +321,6 @@ func GetDefaultWebsocketTransport() *Transport {
 		SendTimeout:    WsDefaultSendTimeout,
 		BufferSize:     WsDefaultBufferSize,
 		BinaryMessage:  false,
+		Dialer:         websocket.DefaultDialer,
 	}
 }
