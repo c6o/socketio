@@ -27,8 +27,7 @@ type systemHandler func(c *Channel)
 Contains maps of message processing functions
 */
 type methods struct {
-	messageHandlers     sync.Map
-	messageHandlersLock sync.RWMutex
+	messageHandlers sync.Map
 
 	onConnection    systemHandler
 	onDisconnection systemHandler
@@ -42,6 +41,10 @@ func (m *methods) On(method string, f interface{}) error {
 
 	m.messageHandlers.Store(method, c)
 	return nil
+}
+
+func (m *methods) RemoveAllListeners() {
+	m.messageHandlers = sync.Map{}
 }
 
 /*
