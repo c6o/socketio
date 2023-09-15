@@ -267,6 +267,8 @@ type Transport struct {
 	BufferSize    int
 	BinaryMessage bool
 
+	Upgrader *websocket.Upgrader
+
 	Dialer *websocket.Dialer
 
 	RequestHeader http.Header
@@ -289,10 +291,14 @@ func (wst *Transport) HandleConnection(
 		return nil, ErrorMethodNotAllowed
 	}
 
-	upgrade := &websocket.Upgrader{
-		ReadBufferSize:  wst.BufferSize,
-		WriteBufferSize: wst.BufferSize,
+	upgrade := wst.Upgrader
+	if upgrade == nil {
+			upgrade = &websocket.Upgrader{
+			ReadBufferSize:  wst.BufferSize,
+			WriteBufferSize: wst.BufferSize,
+		}
 	}
+
 	socket, err := upgrade.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, upgradeFailed+err.Error(), 503)
