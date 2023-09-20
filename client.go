@@ -16,6 +16,8 @@ const (
 type Client struct {
 	methods
 	Channel
+
+	url string
 }
 
 func GetUrl(host string, port int, secure bool) string {
@@ -34,26 +36,23 @@ func Dial(url string, tr websocket.Transport) (*Client, error) {
 	c := &Client{}
 	c.initChannel()
 
-	var err error
-
 	if tr.Protocol == protocol.Protocol3 {
-		url = url + "&EIO=3"
+		c.url = url + "&EIO=3"
 	} else if tr.Protocol == protocol.Protocol4 {
-		url = url + "&EIO=4"
+		c.url = url + "&EIO=4"
 	} else {
-		url = url + "&EIO=4"
+		c.url = url + "&EIO=4"
 	}
 
-	c.conn, err = tr.Connect(url)
-	if err != nil {
-		return nil, err
-	}
+	var err error
+	c.conn, err = tr.Connect(c.url)
 	if err != nil {
 		return nil, err
 	}
 
 	go inLoop(&c.Channel, &c.methods)
 	go outLoop(&c.Channel, &c.methods)
+	go pingLoop(&c.Channel, &c.methods)
 
 	return c, nil
 }

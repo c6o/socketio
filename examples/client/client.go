@@ -20,7 +20,7 @@ type Desc struct {
 
 func sendAck(c *shadiaosocketio.Client) {
 	// return [][]byte
-	result, err := c.Ack("/ackFromClient", time.Second*5, Message{Id: 3, Channel: "client channel"}, 4)
+	result, err := c.Ack("/ackFromClient", time.Second*5, nil, Message{Id: 3, Channel: "client channel"}, 4)
 	if err != nil {
 		log.Println("[client] ack cb err:", err)
 	} else {
@@ -62,7 +62,14 @@ func sendAck(c *shadiaosocketio.Client) {
 }
 
 func sendMessage(c *shadiaosocketio.Client, args ...interface{}) {
-	err := c.Emit("message", args...)
+	err := c.Emit("message", nil, args...)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func sendPriorityMessage(c *shadiaosocketio.Client, args ...interface{}) {
+	err := c.Emit("message", &shadiaosocketio.MessageContext{Priority: true}, args...)
 	if err != nil {
 		panic(err)
 	}
@@ -78,6 +85,20 @@ func createClient() *shadiaosocketio.Client {
 
 	_ = c.On(shadiaosocketio.OnConnection, func(h *shadiaosocketio.Channel) {
 		log.Println("[client] connected! id:", h.Id())
+		sendPriorityMessage(c, "client connected priority", &Message{
+			Id:      1,
+			Channel: "client channel",
+		}, 2)
+		log.Println("[client]", h.LocalAddr().Network()+" "+h.LocalAddr().String()+
+			" --> "+h.RemoteAddr().Network()+" "+h.RemoteAddr().String())
+	})
+
+	_ = c.On(shadiaosocketio.OnReconnection, func(h *shadiaosocketio.Channel) {
+		log.Println("[client] reconnected! id:", h.Id())
+		sendMessage(c, "client reconnected", &Message{
+			Id:      1,
+			Channel: "client channel",
+		}, 2)
 		log.Println("[client]", h.LocalAddr().Network()+" "+h.LocalAddr().String()+
 			" --> "+h.RemoteAddr().Network()+" "+h.RemoteAddr().String())
 	})

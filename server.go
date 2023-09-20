@@ -227,8 +227,8 @@ func (c *Channel) BroadcastTo(room, method string, args interface{}) {
 	}
 
 	for cn := range roomChannels {
-		if cn.Id() != c.Id() && cn.IsAlive() {
-			go cn.Emit(method, args)
+		if cn.Id() != c.Id() && cn.IsConnected() {
+			go cn.Emit(method, nil, args)
 		}
 	}
 }
@@ -247,8 +247,8 @@ func (s *Server) BroadcastTo(room, method string, args interface{}) {
 	}
 
 	for cn := range roomChannels {
-		if cn.IsAlive() {
-			go cn.Emit(method, args)
+		if cn.IsConnected() {
+			go cn.Emit(method, nil, args)
 		}
 	}
 }
@@ -262,8 +262,8 @@ func (s *Server) BroadcastToAll(method string, args interface{}) {
 	defer s.sidsLock.RUnlock()
 
 	for _, cn := range s.sids {
-		if cn.IsAlive() {
-			go cn.Emit(method, args)
+		if cn.IsConnected() {
+			go cn.Emit(method, nil, args)
 		}
 	}
 }
@@ -395,6 +395,7 @@ func (s *Server) SetupEventLoop(conn *websocket.Connection, remoteAddr string,
 	c.server = s
 	c.header = hdr
 
+	c.state.Store(ChannelStateConnected)
 	s.SendOpenSequence(c)
 
 	go inLoop(c, &s.methods)

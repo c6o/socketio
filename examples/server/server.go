@@ -30,10 +30,10 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 		c.BroadcastTo("room", "/admin", Message{2, "hello everyone!"})
 
-		_ = c.Emit("message", Message{10, "{\"chinese\":\"中文才是最屌的\"}"})
+		_ = c.Emit("message", nil, Message{10, "{\"chinese\":\"中文才是最屌的\"}"})
 
 		// return [][]byte
-		result, err := c.Ack("/ackFromServer", time.Second*5, "go", 3)
+		result, err := c.Ack("/ackFromServer", time.Second*5, nil, "go", 3)
 		if err != nil {
 			log.Println("[server] ack cb err:", err)
 			return

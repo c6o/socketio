@@ -12,21 +12,26 @@ var (
 	ErrorSocketOverflood = errors.New("socket overflood")
 )
 
+type MessageContext struct {
+	Priority bool
+}
+
 /*
 *
 Send message packet to socket
 */
-func send(c *Channel, msg *protocol.Message) error {
+func send(c *Channel, msg *protocol.Message, ctx *MessageContext) error {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("socket.io send panic: ", r)
 		}
 	}()
 
-	out := protocol.GetMsgPacket(msg)
+	var out any
+	out = protocol.GetMsgPacket(msg)
 
-	if len(c.out) == queueBufferSize {
-		return ErrorSocketOverflood
+	if ctx != nil && ctx.Priority {
+		out = &protocol.ContextMsgPack{MsgPack: out.(*protocol.MsgPack), Priority: true}
 	}
 
 	c.out <- out
@@ -34,7 +39,7 @@ func send(c *Channel, msg *protocol.Message) error {
 	return nil
 }
 
-func (c *Channel) Emit(method string, args ...interface{}) error {
+func (c *Channel) Emit(method string, ctx *MessageContext, args ...interface{}) error {
 	msg := &protocol.Message{
 		Type:   protocol.EVENT,
 		AckId:  -1,
@@ -43,10 +48,10 @@ func (c *Channel) Emit(method string, args ...interface{}) error {
 		Args:   args,
 	}
 
-	return send(c, msg)
+	return send(c, msg, ctx)
 }
 
-func (c *Channel) Ack(method string, timeout time.Duration, args ...interface{}) (interface{}, error) {
+func (c *Channel) Ack(method string, timeout time.Duration, ctx *MessageContext, args ...interface{}) (interface{}, error) {
 	msg := &protocol.Message{
 		Type:   protocol.EVENT,
 		AckId:  c.ack.getNextId(),
@@ -58,7 +63,7 @@ func (c *Channel) Ack(method string, timeout time.Duration, args ...interface{})
 	waiter := make(chan interface{})
 	c.ack.addWaiter(msg.AckId, waiter)
 
-	err := send(c, msg)
+	err := send(c, msg, ctx)
 	if err != nil {
 		c.ack.removeWaiter(msg.AckId)
 	}

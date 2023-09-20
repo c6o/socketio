@@ -1,13 +1,17 @@
 package shadiaosocketio
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/Baiguoshuai1/shadiaosocketio/protocol"
 	"github.com/Baiguoshuai1/shadiaosocketio/utils"
 	"github.com/Baiguoshuai1/shadiaosocketio/websocket"
+	gorillaws "github.com/gorilla/websocket"
+	"math/rand"
 	"net"
 	"net/http"
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -34,11 +38,18 @@ type Header struct {
 	PingTimeout  int      `json:"pingTimeout"`
 }
 
+const (
+	ChannelStateConnecting = iota
+	ChannelStateConnected
+	ChannelStateClosing
+	ChannelStateClosed
+)
+
 /*
 *
 socket.io connection handler
 
-use IsAlive to check that handler is still working
+use IsConnected to check that handler is still working
 use Dial to connect to websocket
 use In and Out channels for message exchange
 Close message means channel is closed
@@ -50,14 +61,15 @@ type Channel struct {
 	out    chan interface{}
 	header Header
 
-	alive     bool
-	aliveLock sync.Mutex
+	state atomic.Uint32
 
 	ack ackProcessor
 
 	server  *Server
 	ip      string
 	request *http.Request
+
+	pingChan chan bool
 }
 
 func (c *Channel) BinaryMessage() bool {
@@ -73,10 +85,9 @@ func (c *Channel) LocalAddr() net.Addr {
 }
 
 func (c *Channel) initChannel() {
-	//TODO: queueBufferSize from constant to server or socket variable
-	c.out = make(chan interface{}, queueBufferSize)
-	//c.ack.resultWaiters = make(map[int](chan string))
-	c.setAliveValue(true)
+	c.pingChan = make(chan bool, 1)
+	c.out = make(chan interface{})
+	c.state.Store(ChannelStateConnecting)
 }
 
 func (c *Channel) Id() string {
@@ -91,22 +102,37 @@ func (c *Channel) WriteBytes() int {
 	return c.conn.GetWriteBytes()
 }
 
-/*
-*
-Checks that Channel is still alive
-*/
-func (c *Channel) IsAlive() bool {
-	c.aliveLock.Lock()
-	isAlive := c.alive
-	c.aliveLock.Unlock()
-
-	return isAlive
+func (c *Channel) IsConnected() bool {
+	return c.state.Load() == ChannelStateConnected
 }
 
-func (c *Channel) setAliveValue(value bool) {
-	c.aliveLock.Lock()
-	c.alive = value
-	c.aliveLock.Unlock()
+func reconnectChannel(c *Channel, m *methods) error {
+	if !(c.state.Load() == ChannelStateConnected) {
+		return nil
+	}
+
+	c.state.Store(ChannelStateConnecting)
+
+	retry := 1
+	for {
+		utils.Debug(fmt.Sprintf("[reconnect retry] attempt %d", retry))
+		// linear backoff, minimum 2 seconds, maximum (retry * 2 + rand 0-4 seconds)
+		delay := time.Duration(retry*2000+rand.Intn(4000)) * time.Millisecond
+		time.Sleep(delay)
+		err := c.conn.Reconnect()
+		if err != nil {
+			if retry >= 3 {
+				return err
+			}
+			retry++
+			continue
+		}
+		break
+	}
+
+	m.callLoopEvent(c, OnReconnection)
+
+	return nil
 }
 
 /*
@@ -114,11 +140,11 @@ func (c *Channel) setAliveValue(value bool) {
 Close channel
 */
 func closeChannel(c *Channel, m *methods, args ...interface{}) error {
-	if !c.IsAlive() {
-		//already closed
+	if c.state.Load() >= ChannelStateClosing {
 		return nil
 	}
-	c.setAliveValue(false)
+
+	c.state.Store(ChannelStateClosing)
 
 	var s []interface{}
 	closeErr := &websocket.CloseError{}
@@ -139,6 +165,7 @@ func closeChannel(c *Channel, m *methods, args ...interface{}) error {
 		<-c.out
 	}
 
+	c.state.Store(ChannelStateClosed)
 	m.callLoopEvent(c, OnDisconnection, s...)
 
 	return nil
@@ -147,9 +174,18 @@ func closeChannel(c *Channel, m *methods, args ...interface{}) error {
 // incoming messages loop, puts incoming messages to In channel
 func inLoop(c *Channel, m *methods) error {
 	for {
+		if c.state.Load() != ChannelStateConnected {
+			// prevents too many reads from the failed socket panic during reconnect
+			time.Sleep(200 * time.Millisecond)
+		}
+
 		msg, err := c.conn.GetMessage()
 		if err != nil {
-			return closeChannel(c, m, err)
+			err := handleReadError(err, c, m)
+			if err != nil {
+				return closeChannel(c, m, err)
+			}
+			continue
 		}
 		prefix := string(msg[0])
 		protocolV := c.conn.GetProtocol()
@@ -165,11 +201,30 @@ func inLoop(c *Channel, m *methods) error {
 			}
 
 			if protocolV == protocol.Protocol3 {
+				c.state.Store(ChannelStateConnected)
 				m.callLoopEvent(c, OnConnection)
 				// in protocol v3, the client sends a ping, and the server answers with a pong
 				go SchedulePing(c)
 			}
 			if c.conn.GetProtocol() == protocol.Protocol4 {
+				params := make(map[string]interface{})
+				err := json.Unmarshal([]byte(msg[1:]), &params)
+				if err != nil {
+					return closeChannel(c, m, err)
+				}
+
+				c.header.Sid = params["sid"].(string)
+				if v, ok := params["pingInterval"]; ok {
+					c.header.PingInterval = int(v.(float64))
+				} else {
+					c.header.PingInterval = 25000
+				}
+				if v, ok := params["pingTimeout"]; ok {
+					c.header.PingTimeout = int(v.(float64))
+				} else {
+					c.header.PingTimeout = 20000
+				}
+
 				// in protocol v4 & binary msg Connection to a namespace
 				if c.conn.GetUseBinaryMessage() {
 					c.out <- &protocol.MsgPack{
@@ -186,6 +241,9 @@ func inLoop(c *Channel, m *methods) error {
 		case protocol.CloseMsg:
 			return closeChannel(c, m)
 		case protocol.PingMsg:
+			go func() {
+				c.pingChan <- true
+			}()
 			// in protocol v4, the server sends a ping, and the client answers with a pong
 			c.out <- protocol.PongMsg
 		case protocol.PongMsg:
@@ -202,10 +260,64 @@ func inLoop(c *Channel, m *methods) error {
 	}
 }
 
+func handleReadError(err error, c *Channel, m *methods) error {
+	if e, ok := err.(*gorillaws.CloseError); ok && e.Code > 1000 {
+		reconnectErr := reconnectChannel(c, m)
+		if reconnectErr != nil {
+			return err
+		} else {
+			return nil
+		}
+	} else {
+		return err
+	}
+}
+
 func outLoop(c *Channel, m *methods) error {
+	var buffer []interface{}
 	for {
-		outBufferLen := len(c.out)
-		if outBufferLen >= queueBufferSize-1 {
+		if c.state.Load() >= ChannelStateClosed {
+			return nil
+		}
+
+		msg := <-c.out
+
+		if msg == protocol.CloseMsg {
+			return closeChannel(c, m)
+		}
+
+		if msg == protocol.CommonMsg+protocol.OpenMsg {
+			err := c.conn.WriteMessage(msg)
+			if err != nil {
+				return closeChannel(c, m, err)
+			}
+			continue
+		}
+
+		var msgpack *protocol.MsgPack
+		priority := false
+		if v, ok := msg.(*protocol.ContextMsgPack); ok {
+			priority = v.Priority
+			msgpack = v.MsgPack
+		} else if v, ok := msg.(*protocol.MsgPack); ok {
+			msgpack = v
+		}
+
+		if msgpack != nil && msgpack.Type == protocol.CONNECT {
+			err := c.conn.WriteMessage(msg)
+			if err != nil {
+				return closeChannel(c, m, err)
+			}
+			continue
+		}
+
+		if priority {
+			buffer = append([]interface{}{msg}, buffer...)
+		} else {
+			buffer = append(buffer, msg)
+		}
+
+		if len(buffer) >= queueBufferSize-1 {
 			closeErr := &websocket.CloseError{}
 			closeErr.Code = websocket.QueueBufferSizeCode
 			closeErr.Text = ErrorSocketOverflood.Error()
@@ -213,20 +325,53 @@ func outLoop(c *Channel, m *methods) error {
 			return closeChannel(c, m, closeErr)
 		}
 
-		msg := <-c.out
-		if msg == protocol.CloseMsg {
-			return nil
+		if c.state.Load() != ChannelStateConnected {
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
 
-		err := c.conn.WriteMessage(msg)
-		if err != nil {
-			closeErr := &websocket.CloseError{}
-			closeErr.Code = websocket.WriteBufferErrCode
-			closeErr.Text = err.Error()
+		processed := 0
+		for _, bm := range buffer {
+			err := c.conn.WriteMessage(bm)
+			if err == nil {
+				processed++
+			} else {
+				break
+			}
+			if bm == protocol.CloseMsg {
+				return nil
+			}
+		}
 
-			return closeChannel(c, m, closeErr)
+		buffer = buffer[processed:]
+	}
+}
+
+func pingLoop(c *Channel, m *methods) {
+	for {
+		state := c.state.Load()
+		if state >= ChannelStateClosing {
+			return
+		}
+
+		if state != ChannelStateConnected {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		select {
+		case <-c.pingChan:
+			continue
+		case <-time.After(time.Duration(c.header.PingInterval+c.header.PingTimeout) * time.Millisecond):
+			utils.Debug("[ping timeout]")
+			reconnectErr := reconnectChannel(c, m)
+			if reconnectErr != nil {
+				closeChannel(c, m, errors.New("ping timeout"))
+				return
+			}
 		}
 	}
+
 }
 
 func SchedulePing(c *Channel) {
@@ -234,7 +379,7 @@ func SchedulePing(c *Channel) {
 	ticker := time.NewTicker(interval)
 	for {
 		<-ticker.C
-		if !c.IsAlive() {
+		if !c.IsConnected() {
 			return
 		}
 		c.out <- protocol.PingMsg

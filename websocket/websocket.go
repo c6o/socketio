@@ -39,11 +39,12 @@ const (
 )
 
 var (
-	ErrorBinaryMessage     = errors.New("binary messages are not supported")
-	ErrorBadBuffer         = errors.New("buffer error")
-	ErrorPacketWrong       = errors.New("wrong packet type error")
-	ErrorMethodNotAllowed  = errors.New("method not allowed")
-	ErrorHttpUpgradeFailed = errors.New("http upgrade failed")
+	ErrorBinaryMessage      = errors.New("binary messages are not supported")
+	ErrorBadBuffer          = errors.New("buffer error")
+	ErrorPacketWrong        = errors.New("wrong packet type error")
+	ErrorMethodNotAllowed   = errors.New("method not allowed")
+	ErrorHttpUpgradeFailed  = errors.New("http upgrade failed")
+	ErrorConnectionNotFound = errors.New("connection not found")
 )
 
 // create and configure Handle
@@ -57,6 +58,7 @@ type CloseError struct {
 
 type Connection struct {
 	socket     *websocket.Conn
+	url        string
 	transport  *Transport
 	writeBytes int
 	readBytes  int
@@ -138,9 +140,12 @@ func (wsc *Connection) WriteMessage(message interface{}) error {
 			messageType = websocket.TextMessage
 		}
 
-		data, err = wsc.encodeMessage(message.(*protocol.MsgPack), messageType)
-		if err != nil {
-			return err
+		v := protocol.GetMsgPack(message)
+		if v != nil {
+			data, err = wsc.encodeMessage(v, messageType)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -249,6 +254,27 @@ func (wsc *Connection) encodeMessage(msg *protocol.MsgPack, messageType int) ([]
 	return bf, nil
 }
 
+func (wsc *Connection) Reconnect() error {
+	if wsc.url == "" {
+		return errors.New("reconnect not supported")
+	}
+	if wsc.socket != nil {
+		socket := wsc.socket
+		go func() {
+			// cleanup old sockets eventually, wait in case new connection is being established
+			// otherwise the new one will be closed immediately due to some race condition
+			time.Sleep(60 * time.Second)
+			socket.Close()
+		}()
+	}
+	conn, err := wsc.transport.Connect(wsc.url)
+	if err != nil {
+		return err
+	}
+	wsc.socket = conn.socket
+	return nil
+}
+
 func (wsc *Connection) Close() {
 	wsc.socket.Close()
 }
@@ -280,7 +306,7 @@ func (wst *Transport) Connect(url string) (conn *Connection, err error) {
 		return nil, err
 	}
 
-	return &Connection{socket, wst, 0, 0}, nil
+	return &Connection{socket, url, wst, 0, 0}, nil
 }
 
 func (wst *Transport) HandleConnection(
@@ -293,7 +319,7 @@ func (wst *Transport) HandleConnection(
 
 	upgrade := wst.Upgrader
 	if upgrade == nil {
-			upgrade = &websocket.Upgrader{
+		upgrade = &websocket.Upgrader{
 			ReadBufferSize:  wst.BufferSize,
 			WriteBufferSize: wst.BufferSize,
 		}
@@ -305,7 +331,7 @@ func (wst *Transport) HandleConnection(
 		return nil, ErrorHttpUpgradeFailed
 	}
 
-	return &Connection{socket, wst, 0, 0}, nil
+	return &Connection{socket, "", wst, 0, 0}, nil
 }
 
 /*

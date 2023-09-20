@@ -4,7 +4,6 @@ import (
 	"github.com/Baiguoshuai1/shadiaosocketio/protocol"
 	"github.com/Baiguoshuai1/shadiaosocketio/utils"
 	"github.com/buger/jsonparser"
-	"reflect"
 	"strconv"
 	"sync"
 )
@@ -12,6 +11,7 @@ import (
 const (
 	OnMessage       = "message"
 	OnConnection    = "connection"
+	OnReconnection  = "reconnection"
 	OnDisconnection = "disconnection"
 	OnError         = "error"
 )
@@ -117,12 +117,7 @@ func (m *methods) processIncomingMessageText(c *Channel, msg string) {
 
 	switch mType {
 	case protocol.CONNECT:
-		sid, err := jsonparser.GetString([]byte(msg[1:]), "sid")
-		if err != nil {
-			return
-		}
-
-		c.header.Sid = sid
+		c.state.Store(ChannelStateConnected)
 		m.callLoopEvent(c, OnConnection)
 	case protocol.DISCONNECT:
 		closeChannel(c, m)
@@ -216,16 +211,7 @@ func (m *methods) processIncomingMessage(c *Channel, msg string) {
 
 	switch packet.Type {
 	case protocol.CONNECT:
-		// server protocol 4 & binary msg -> client protocol 3 // 4{"type":0,"data":null,"nsp":"/","id":0}
-		if packet.Data == nil {
-			return
-		}
-		// {"type":0,"data":{},"nsp":"/","id":0}
-		if reflect.ValueOf(packet.Data).Len() == 0 {
-			return
-		}
-
-		c.header.Sid = reflect.ValueOf(packet.Data).MapIndex(reflect.ValueOf("sid")).Interface().(string)
+		c.state.Store(ChannelStateConnected)
 		m.callLoopEvent(c, OnConnection)
 	case protocol.DISCONNECT:
 		closeChannel(c, m)
