@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -225,6 +226,11 @@ func inLoop(c *Channel, m *methods) error {
 					c.header.PingTimeout = 20000
 				}
 
+				go func() {
+					// treat the connection establish as first ping
+					c.pingChan <- true
+				}()
+
 				// in protocol v4 & binary msg Connection to a namespace
 				if c.conn.GetUseBinaryMessage() {
 					c.out <- &protocol.MsgPack{
@@ -261,6 +267,10 @@ func inLoop(c *Channel, m *methods) error {
 }
 
 func handleReadError(err error, c *Channel, m *methods) error {
+	if strings.Contains(err.Error(), "use of closed network connection") {
+		return nil
+	}
+
 	if e, ok := err.(*gorillaws.CloseError); ok && e.Code > 1000 {
 		reconnectErr := reconnectChannel(c, m)
 		if reconnectErr != nil {
@@ -363,6 +373,9 @@ func pingLoop(c *Channel, m *methods) {
 		case <-c.pingChan:
 			continue
 		case <-time.After(time.Duration(c.header.PingInterval+c.header.PingTimeout) * time.Millisecond):
+			if c.state.Load() != ChannelStateConnected {
+				continue
+			}
 			utils.Debug("[ping timeout]")
 			reconnectErr := reconnectChannel(c, m)
 			if reconnectErr != nil {

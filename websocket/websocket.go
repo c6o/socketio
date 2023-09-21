@@ -260,12 +260,7 @@ func (wsc *Connection) Reconnect() error {
 	}
 	if wsc.socket != nil {
 		socket := wsc.socket
-		go func() {
-			// cleanup old sockets eventually, wait in case new connection is being established
-			// otherwise the new one will be closed immediately due to some race condition
-			time.Sleep(60 * time.Second)
-			socket.Close()
-		}()
+		defer socket.Close()
 	}
 	conn, err := wsc.transport.Connect(wsc.url)
 	if err != nil {
