@@ -57,6 +57,8 @@ Close message means channel is closed
 ping is automatic
 */
 type Channel struct {
+	Backoff func(int) time.Duration
+
 	conn *websocket.Connection
 
 	out    chan interface{}
@@ -117,8 +119,13 @@ func reconnectChannel(c *Channel, m *methods) error {
 	retry := 1
 	for {
 		utils.Debug(fmt.Sprintf("[reconnect retry] attempt %d", retry))
-		// linear backoff, minimum 2 seconds, maximum (retry * 2 + rand 0-4 seconds)
-		delay := time.Duration(retry*2000+rand.Intn(4000)) * time.Millisecond
+		delay := time.Duration(0)
+		if c.Backoff != nil {
+			delay = c.Backoff(retry)
+		} else {
+			// linear backoff, minimum 2 seconds, maximum (retry * 2 + rand 0-4 seconds)
+			delay = time.Duration(retry*2000+rand.Intn(4000)) * time.Millisecond
+		}
 		time.Sleep(delay)
 		err := c.conn.Reconnect()
 		if err != nil {
@@ -245,7 +252,10 @@ func inLoop(c *Channel, m *methods) error {
 				}
 			}
 		case protocol.CloseMsg:
-			return closeChannel(c, m)
+			reconnectErr := reconnectChannel(c, m)
+			if reconnectErr != nil {
+				return closeChannel(c, m)
+			}
 		case protocol.PingMsg:
 			go func() {
 				c.pingChan <- true

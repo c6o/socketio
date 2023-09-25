@@ -120,7 +120,10 @@ func (m *methods) processIncomingMessageText(c *Channel, msg string) {
 		c.state.Store(ChannelStateConnected)
 		m.callLoopEvent(c, OnConnection)
 	case protocol.DISCONNECT:
-		closeChannel(c, m)
+		reconnectErr := reconnectChannel(c, m)
+		if reconnectErr != nil {
+			closeChannel(c, m)
+		}
 	case protocol.EVENT:
 		// ack
 		if string(msg[1]) != "[" {
@@ -214,7 +217,10 @@ func (m *methods) processIncomingMessage(c *Channel, msg string) {
 		c.state.Store(ChannelStateConnected)
 		m.callLoopEvent(c, OnConnection)
 	case protocol.DISCONNECT:
-		closeChannel(c, m)
+		reconnectErr := reconnectChannel(c, m)
+		if reconnectErr != nil {
+			closeChannel(c, m)
+		}
 	case protocol.EVENT:
 		// ack
 		if packet.Id >= 0 {

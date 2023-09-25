@@ -124,6 +124,10 @@ func TestClient_ShouldReconnectWhenServerStops(t *testing.T) {
 		panic(err)
 	}
 
+	c.Backoff = func(i int) time.Duration {
+		return 500 * time.Millisecond
+	}
+
 	firstConnection := awaitable.NewAwaitable("client: onconnection")
 	c.On(shadiaosocketio.OnConnection, func(c *shadiaosocketio.Channel) {
 		jobs.Remove("client: onconnection")
@@ -148,7 +152,7 @@ func TestClient_ShouldReconnectWhenServerStops(t *testing.T) {
 	s2stdoutChan, s2cleanup := startServer("server_1.js", t)
 	go handleServerJobs("server2", s2stdoutChan, jobs)
 
-	remaining = jobs.Done(5 * time.Second)
+	remaining = jobs.Done(3 * time.Second)
 	s2stdout := s2cleanup()
 	if remaining != nil {
 		t.Logf("Server1 output:\n%s", s1output)
@@ -177,6 +181,10 @@ func TestClient_ShouldReconnectWhenServerClosesConnection(t *testing.T) {
 		panic(err)
 	}
 
+	c.Backoff = func(i int) time.Duration {
+		return 500 * time.Millisecond
+	}
+
 	c.On(shadiaosocketio.OnConnection, func(c *shadiaosocketio.Channel) {
 		jobs.Remove("client: onconnection")
 	})
@@ -189,7 +197,7 @@ func TestClient_ShouldReconnectWhenServerClosesConnection(t *testing.T) {
 		t.Fatalf("Client disconnected unexpectedly.")
 	})
 
-	remaining := jobs.Done(5 * time.Second)
+	remaining := jobs.Done(3 * time.Second)
 	stdout := cleanup()
 	if remaining != nil {
 		t.Logf("Server output:\n%s", stdout)
