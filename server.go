@@ -228,7 +228,7 @@ func (c *Channel) BroadcastTo(room, method string, args interface{}) {
 
 	for cn := range roomChannels {
 		if cn.Id() != c.Id() && cn.IsConnected() {
-			go cn.Emit(method, nil, args)
+			go cn.Emit(method, args)
 		}
 	}
 }
@@ -248,7 +248,7 @@ func (s *Server) BroadcastTo(room, method string, args interface{}) {
 
 	for cn := range roomChannels {
 		if cn.IsConnected() {
-			go cn.Emit(method, nil, args)
+			go cn.Emit(method, args)
 		}
 	}
 }
@@ -263,7 +263,7 @@ func (s *Server) BroadcastToAll(method string, args interface{}) {
 
 	for _, cn := range s.sids {
 		if cn.IsConnected() {
-			go cn.Emit(method, nil, args)
+			go cn.Emit(method, args)
 		}
 	}
 }

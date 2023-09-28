@@ -89,7 +89,7 @@ func (c *Channel) LocalAddr() net.Addr {
 
 func (c *Channel) initChannel() {
 	c.pingChan = make(chan bool, 1)
-	c.out = make(chan interface{})
+	c.out = make(chan interface{}, queueBufferSize)
 	c.state.Store(ChannelStateConnecting)
 }
 
