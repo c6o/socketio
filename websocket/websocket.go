@@ -296,7 +296,11 @@ type Transport struct {
 }
 
 func (wst *Transport) Connect(url string) (conn *Connection, err error) {
-	socket, _, err := wst.Dialer.Dial(url, wst.RequestHeader())
+	var headers http.Header
+	if wst.RequestHeader != nil {
+		headers = wst.RequestHeader()
+	}
+	socket, _, err := wst.Dialer.Dial(url, headers)
 	if err != nil {
 		return nil, err
 	}
