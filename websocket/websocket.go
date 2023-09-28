@@ -292,11 +292,11 @@ type Transport struct {
 
 	Dialer *websocket.Dialer
 
-	RequestHeader http.Header
+	RequestHeader func() http.Header
 }
 
 func (wst *Transport) Connect(url string) (conn *Connection, err error) {
-	socket, _, err := wst.Dialer.Dial(url, wst.RequestHeader)
+	socket, _, err := wst.Dialer.Dial(url, wst.RequestHeader())
 	if err != nil {
 		return nil, err
 	}
