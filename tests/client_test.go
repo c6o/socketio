@@ -62,8 +62,8 @@ func TestClient_ShouldSendMessages(t *testing.T) {
 	}
 
 	c.On(shadiaosocketio.OnConnection, func(*shadiaosocketio.Channel) {
-		c.Emit("message", nil, "hello", "world")
-		c.Emit("message", nil, "goodbye", "world")
+		c.Emit("message", "hello", "world")
+		c.Emit("message", "goodbye", "world")
 	})
 
 	remaining := jobs.Done(1 * time.Second)

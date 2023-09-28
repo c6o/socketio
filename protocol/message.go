@@ -32,20 +32,6 @@ type MsgPack struct {
 	Id   int         `json:"id"`
 }
 
-type ContextMsgPack struct {
-	*MsgPack
-	Priority bool
-}
-
-func GetMsgPack(v any) *MsgPack {
-	if msg, ok := v.(*MsgPack); ok {
-		return msg
-	} else if msg, ok := v.(*ContextMsgPack); ok {
-		return msg.MsgPack
-	}
-	return nil
-}
-
 type Message struct {
 	Type   int
 	Method string // maybe as ""

@@ -62,14 +62,14 @@ func sendAck(c *shadiaosocketio.Client) {
 }
 
 func sendMessage(c *shadiaosocketio.Client, args ...interface{}) {
-	err := c.Emit("message", nil, args...)
+	err := c.Emit("message", args...)
 	if err != nil {
 		panic(err)
 	}
 }
 
 func sendPriorityMessage(c *shadiaosocketio.Client, args ...interface{}) {
-	err := c.Emit("message", &shadiaosocketio.MessageContext{Priority: true}, args...)
+	err := c.Emit("message", args...)
 	if err != nil {
 		panic(err)
 	}

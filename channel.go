@@ -315,11 +315,7 @@ func outLoop(c *Channel, m *methods) error {
 		}
 
 		var msgpack *protocol.MsgPack
-		priority := false
-		if v, ok := msg.(*protocol.ContextMsgPack); ok {
-			priority = v.Priority
-			msgpack = v.MsgPack
-		} else if v, ok := msg.(*protocol.MsgPack); ok {
+		if v, ok := msg.(*protocol.MsgPack); ok {
 			msgpack = v
 		}
 
@@ -331,11 +327,7 @@ func outLoop(c *Channel, m *methods) error {
 			continue
 		}
 
-		if priority {
-			buffer = append([]interface{}{msg}, buffer...)
-		} else {
-			buffer = append(buffer, msg)
-		}
+		buffer = append(buffer, msg)
 
 		if len(buffer) >= queueBufferSize-1 {
 			closeErr := &websocket.CloseError{}

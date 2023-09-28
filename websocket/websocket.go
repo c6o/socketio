@@ -140,8 +140,7 @@ func (wsc *Connection) WriteMessage(message interface{}) error {
 			messageType = websocket.TextMessage
 		}
 
-		v := protocol.GetMsgPack(message)
-		if v != nil {
+		if v, ok := message.(*protocol.MsgPack); ok {
 			data, err = wsc.encodeMessage(v, messageType)
 			if err != nil {
 				return err
