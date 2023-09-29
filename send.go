@@ -58,12 +58,16 @@ func (c *Channel) Ack(method string, timeout time.Duration, args ...interface{})
 		c.ack.removeWaiter(msg.AckId)
 	}
 
-	select {
-	case result := <-waiter:
-		c.ack.removeWaiter(msg.AckId)
-		return result, nil
-	case <-time.After(timeout):
-		c.ack.removeWaiter(msg.AckId)
-		return nil, ErrorSendTimeout
+	for {
+		select {
+		case result := <-waiter:
+			c.ack.removeWaiter(msg.AckId)
+			return result, nil
+		case <-time.After(timeout):
+			if c.state.Load() >= ChannelStateConnected {
+				c.ack.removeWaiter(msg.AckId)
+				return nil, ErrorSendTimeout
+			}
+		}
 	}
 }
