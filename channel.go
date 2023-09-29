@@ -108,7 +108,7 @@ func (c *Channel) IsConnected() bool {
 	return c.state.Load() == ChannelStateConnected
 }
 
-var staticDelay = []time.Duration{2, 8, 16, 32, 64, 128}
+var staticDelay = []time.Duration{2, 8, 16, 32}
 
 func reconnectChannel(c *Channel, m *methods) error {
 	if !(c.state.Load() == ChannelStateConnected) {
