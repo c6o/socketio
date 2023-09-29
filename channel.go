@@ -134,7 +134,12 @@ func reconnectChannel(c *Channel, m *methods) error {
 				delay = staticDelay[retry]
 			}
 		}
+
 		time.Sleep(delay)
+
+		if c.state.Load() >= ChannelStateConnected {
+			return nil
+		}
 		err := c.conn.Reconnect()
 		if err != nil {
 			retry++
