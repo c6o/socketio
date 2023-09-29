@@ -8,7 +8,6 @@ import (
 	"github.com/Baiguoshuai1/shadiaosocketio/utils"
 	"github.com/Baiguoshuai1/shadiaosocketio/websocket"
 	gorillaws "github.com/gorilla/websocket"
-	"math/rand"
 	"net"
 	"net/http"
 	"strings"
@@ -109,6 +108,8 @@ func (c *Channel) IsConnected() bool {
 	return c.state.Load() == ChannelStateConnected
 }
 
+var staticDelay = []time.Duration{2, 8, 16, 32, 64, 128}
+
 func reconnectChannel(c *Channel, m *methods) error {
 	if !(c.state.Load() == ChannelStateConnected) {
 		return nil
@@ -116,22 +117,22 @@ func reconnectChannel(c *Channel, m *methods) error {
 
 	c.state.Store(ChannelStateConnecting)
 
-	retry := 1
+	retry := 0
 	for {
 		utils.Debug(fmt.Sprintf("[reconnect retry] attempt %d", retry))
-		delay := time.Duration(0)
+		var delay time.Duration
 		if c.Backoff != nil {
 			delay = c.Backoff(retry)
 		} else {
-			// exponential (^2) backoff, minimum 2 seconds, maximum ∑2n² to ∑n(2n + 4)
-			delay = time.Duration(retry*(retry*2000+rand.Intn(4000))) * time.Millisecond
+			if retry >= len(staticDelay) {
+				delay = staticDelay[len(staticDelay)-1]
+			} else {
+				delay = staticDelay[retry]
+			}
 		}
 		time.Sleep(delay)
 		err := c.conn.Reconnect()
 		if err != nil {
-			if retry >= 5 {
-				return err
-			}
 			retry++
 			continue
 		}
