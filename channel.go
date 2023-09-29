@@ -123,13 +123,13 @@ func reconnectChannel(c *Channel, m *methods) error {
 		if c.Backoff != nil {
 			delay = c.Backoff(retry)
 		} else {
-			// linear backoff, minimum 2 seconds, maximum (retry * 2 + rand 0-4 seconds)
-			delay = time.Duration(retry*2000+rand.Intn(4000)) * time.Millisecond
+			// exponential (^2) backoff, minimum 2 seconds, maximum ∑2n² to ∑n(2n + 4)
+			delay = time.Duration(retry*(retry*2000+rand.Intn(4000))) * time.Millisecond
 		}
 		time.Sleep(delay)
 		err := c.conn.Reconnect()
 		if err != nil {
-			if retry >= 3 {
+			if retry >= 5 {
 				return err
 			}
 			retry++
