@@ -119,6 +119,10 @@ func reconnectChannel(c *Channel, m *methods) error {
 
 	retry := 0
 	for {
+		if c.state.Load() >= ChannelStateConnected {
+			return nil
+		}
+
 		utils.Debug(fmt.Sprintf("[reconnect retry] attempt %d", retry))
 		var delay time.Duration
 		if c.Backoff != nil {
