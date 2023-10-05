@@ -108,7 +108,12 @@ func (c *Channel) IsConnected() bool {
 	return c.state.Load() == ChannelStateConnected
 }
 
-var staticDelay = []time.Duration{2, 8, 16, 32}
+var staticDelay = []time.Duration{
+	2 * time.Second,
+	8 * time.Second,
+	16 * time.Second,
+	32 * time.Second,
+}
 
 func reconnectChannel(c *Channel, m *methods) error {
 	if !(c.state.Load() == ChannelStateConnected) {
@@ -140,9 +145,13 @@ func reconnectChannel(c *Channel, m *methods) error {
 			return nil
 		}
 
-		utils.Debug(fmt.Sprintf("[reconnect retry] attempt %d", retry))
+		utils.Debug(fmt.Sprintf("[reconnect retry] attempt %d", retry+1))
 		err := c.conn.Reconnect()
 		if err != nil {
+			if errors.Is(err, websocket.ReconnectNotSupported) {
+				return err
+			}
+
 			retry++
 			continue
 		}
