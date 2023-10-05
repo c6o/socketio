@@ -45,6 +45,7 @@ var (
 	ErrorMethodNotAllowed   = errors.New("method not allowed")
 	ErrorHttpUpgradeFailed  = errors.New("http upgrade failed")
 	ErrorConnectionNotFound = errors.New("connection not found")
+	ReconnectNotSupported   = errors.New("reconnect not supported")
 )
 
 // create and configure Handle
@@ -255,7 +256,7 @@ func (wsc *Connection) encodeMessage(msg *protocol.MsgPack, messageType int) ([]
 
 func (wsc *Connection) Reconnect() error {
 	if wsc.url == "" {
-		return errors.New("reconnect not supported")
+		return ReconnectNotSupported
 	}
 	if wsc.socket != nil {
 		socket := wsc.socket
